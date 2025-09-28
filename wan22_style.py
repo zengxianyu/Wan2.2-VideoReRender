@@ -2,6 +2,7 @@ import os
 import random
 import pdb
 import sys
+import argparse
 sys.path.insert(0, "ComfyUI")
 from typing import Sequence, Mapping, Any, Union
 from comfy.model_management import load_models_gpu, free_memory, unload_all_models
@@ -333,44 +334,56 @@ class VideoProcessor:
             self.models['create_video'] = NODE_CLASS_MAPPINGS["CreateVideo"]()
             self.loaded_models.add('utility_models')
 
-    def process_video(self, video_file_path: str, output_prefix: str = "video/ComfyUI", 
-                     positive_prompt: str = None, negative_prompt: str = None):
-        """
-        Process a single video file using lazy-loaded models.
-        
-        Args:
-            video_file_path: Path to the input video file
-            output_prefix: Prefix for the output video file
-            positive_prompt: Custom positive prompt (uses default if None)
-            negative_prompt: Custom negative prompt (uses default if None)
-        """
-        # With lazy loading, models will be loaded on-demand during processing
-        
-        # Use default prompts if not provided
-        if positive_prompt is None:
-            positive_prompt = ("Turn it into a photorealistic picture as if it's from a movie. "
-                              "Keep the original lane markers. A photorealistic video as if it's a clip from a movie. "
-                              "A video of a quiet, empty urban street on a gloomy, raining day. "
-                              "The road is wide and wet, with visible puddles and worn textures, "
-                              "giving the impression of recent rain. Faint blue lane markings run down the center of the street. "
-                              "On the right side, a row of low-rise brick apartment buildings with multiple windows "
-                              "and external air conditioning units is visible. A line of tall, thin evergreen trees "
-                              "is planted along the sidewalk beside street lamps. On the left side, a river or waterfront "
-                              "area can be seen, lined with benches, trash bins, and small concrete barriers. "
-                              "Beyond the water, a row of pale green trees fades into the misty, gray horizon. "
-                              "The atmosphere feels damp and foggy, with reduced visibility and a muted color palette "
-                              "dominated by grays and washed-out greens. The camera is fixed at street level, moving forward smoothly")
-        
-        if negative_prompt is None:
-            negative_prompt = ("色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，"
-                              "整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，CG, game, cartoon, anime, "
-                              "render, 渲染，游戏，卡通")
-        
-        return self._process_single_video(video_file_path, output_prefix, positive_prompt, negative_prompt)
+    #def process_video(self, video_file_path: str, output_prefix: str = "video", 
+    #                 positive_prompt: str = None, negative_prompt: str = None,
+    #                 style_positive: str = None, fps: int = 16, num_frames: int = 81, 
+    #                 seed: int = -1, preprocess_option: str = "Canny"):
+    #    """
+    #    Process a single video file using lazy-loaded models.
+    #    
+    #    Args:
+    #        video_file_path: Path to the input video file
+    #        output_prefix: Prefix for the output video file
+    #        positive_prompt: Custom positive prompt (uses default if None)
+    #        negative_prompt: Custom negative prompt (uses default if None)
+    #        style_positive: Style prompt that will be combined with positive_prompt (optional)
+    #        fps: Output video FPS (default: 16)
+    #        num_frames: Number of frames to generate (default: 81)
+    #        seed: Random seed for reproducible results (default: -1 for random)
+    #        preprocess_option: Preprocessing method for control (default: "Canny")
+    #    """
+    #    # With lazy loading, models will be loaded on-demand during processing
+    #    
+    #    # Use default prompts if not provided
+    #    if positive_prompt is None:
+    #        positive_prompt = ("Turn it into a photorealistic picture as if it's from a movie. "
+    #                          "Keep the original lane markers. A photorealistic video as if it's a clip from a movie. "
+    #                          "A video of a quiet, empty urban street on a gloomy, raining day. "
+    #                          "The road is wide and wet, with visible puddles and worn textures, "
+    #                          "giving the impression of recent rain. Faint blue lane markings run down the center of the street. "
+    #                          "On the right side, a row of low-rise brick apartment buildings with multiple windows "
+    #                          "and external air conditioning units is visible. A line of tall, thin evergreen trees "
+    #                          "is planted along the sidewalk beside street lamps. On the left side, a river or waterfront "
+    #                          "area can be seen, lined with benches, trash bins, and small concrete barriers. "
+    #                          "Beyond the water, a row of pale green trees fades into the misty, gray horizon. "
+    #                          "The atmosphere feels damp and foggy, with reduced visibility and a muted color palette "
+    #                          "dominated by grays and washed-out greens. The camera is fixed at street level, moving forward smoothly")
+    #    
+    #    # Combine style_positive with main positive prompt if provided
+    #    if style_positive:
+    #        positive_prompt = f"{positive_prompt}, {style_positive}"
+    #        print(f"Combined prompt: {positive_prompt}")
+    #    
+    #    if negative_prompt is None:
+    #        negative_prompt = ("色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，"
+    #                          "整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，CG, game, cartoon, anime, "
+    #                          "render, 渲染，游戏，卡通")
+    #    
+    #    return self._process_single_video(video_file_path, output_prefix, positive_prompt, negative_prompt, 
+    #                                    preprocess_option, None, num_frames, fps, seed)
     
     def _process_single_video(self, video_file_path: str, output_prefix: str, 
-                            positive_prompt: str, negative_prompt: str, preprocess_option: str = "Canny",
-							flux_positive_prompt: str | None = None,
+                            positive_prompt: str, negative_prompt: str, style_prompt: str, preprocess_option: str = "Intensity",
 							num_frames: int = 81, fps: int = 16, seed: int = -1):
         """Internal method to process a single video with ComfyUI-style memory management."""
         with torch.inference_mode():
@@ -387,11 +400,7 @@ class VideoProcessor:
             print("Flux models loaded for text encoding and image generation")
             
             # Encode prompts for Flux model
-            if flux_positive_prompt is None:
-                flux_prompt_prefix = "Turn it into a photorealistic picture as if it's from a movie. Keep the original lane markers. "
-                positive_prompt_for_flux = flux_prompt_prefix + positive_prompt
-            else:
-                positive_prompt_for_flux = flux_positive_prompt
+            positive_prompt_for_flux = f"{style_prompt}. {positive_prompt}"
 
             flux_positive_conditioning = self.models['clip_text_encode'].encode(
                 text=positive_prompt_for_flux, 
@@ -818,7 +827,9 @@ class VideoProcessor:
                 continue
 
     def process_batch(self, video_files: list, output_prefixes: list = None, 
-                     positive_prompts: list = None, negative_prompts: list = None):
+                     positive_prompts: list = None, negative_prompts: list = None,
+                     style_positive: str = None, fps: int = 16, num_frames: int = 81, 
+                     seed: int = -1, preprocess_option: str = "Canny"):
         """
         Process multiple video files efficiently using lazy-loaded models.
         
@@ -827,6 +838,11 @@ class VideoProcessor:
             output_prefixes: List of output prefixes (uses default if None)
             positive_prompts: List of positive prompts (uses default if None)
             negative_prompts: List of negative prompts (uses default if None)
+            style_positive: Style prompt that will be combined with all positive prompts (optional)
+            fps: Output video FPS (default: 16)
+            num_frames: Number of frames to generate (default: 81)
+            seed: Random seed for reproducible results (default: -1 for random)
+            preprocess_option: Preprocessing method for control (default: "Canny")
         """
         # With lazy loading, we don't need to check models_loaded
         # Models will be loaded on-demand during processing
@@ -841,7 +857,8 @@ class VideoProcessor:
             negative_prompt = negative_prompts[i] if negative_prompts and i < len(negative_prompts) else None
             
             try:
-                result = self.process_video(video_file, output_prefix, positive_prompt, negative_prompt)
+                result = self.process_video(video_file, output_prefix, positive_prompt, negative_prompt,
+                                           style_positive, fps, num_frames, seed, preprocess_option)
                 results.append(result)
             except Exception as e:
                 print(f"Error processing {video_file}: {e}")
@@ -883,35 +900,297 @@ def load_videos_and_prompts(directory_path: str):
     return video_files, positive_prompts
 
 
-if __name__ == "__main__":
+def parse_arguments():
     """
-    Process videos and prompts from the town_videos directory.
+    Parse command line arguments for the video processing script.
+    
+    Returns:
+        argparse.Namespace: Parsed arguments
     """
-    
-    # Initialize the processor (loads models once)
-    processor = VideoProcessor()
-    
-    # Load videos and prompts from the specified directory
-    video_dir = "/home/zeng/first-step-carla/town_videos"
-    video_files, positive_prompts = load_videos_and_prompts(video_dir)
-    
-    print(f"Found {len(video_files)} videos to process:")
-    for i, (video, prompt) in enumerate(zip(video_files, positive_prompts)):
-        print(f"  {i+1}. {os.path.basename(video)}")
-        print(f"     Prompt: {prompt[:100]}...")
-    
-    # Create output prefixes based on original filenames
-    output_prefixes = []
-    for video_file in video_files:
-        base_name = os.path.splitext(os.path.basename(video_file))[0]
-        output_prefixes.append(f"video/processed_{base_name}")
-    
-    # Process all videos with their corresponding prompts
-    results = processor.process_batch(
-        video_files, 
-        output_prefixes=output_prefixes,
-        positive_prompts=positive_prompts
+    parser = argparse.ArgumentParser(
+        description="Process videos with AI re-renderer and style transfer",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Process a single video file
+  python wan22_style.py --input video.mp4 --output processed_video.mp4
+  
+  # Process all videos in a directory
+  python wan22_style.py --input /path/to/videos/ --output /path/to/output/
+  
+  # Process with custom prompts
+  python wan22_style.py --input video.mp4 --positive "A cinematic scene" --negative "blurry, low quality"
+  
+  # Process with style prompt
+  python wan22_style.py --input video.mp4 --style-positive "in the style of Van Gogh" --positive "A beautiful landscape"
+  
+  # Process directory with custom output directory
+  python wan22_style.py --input /path/to/videos/ --output /path/to/output/ --batch
+        """
     )
     
-    print(f"\nBatch processing completed! Processed {len(results)} videos.")
-    print("Intermediate results saved to: video/intermediates/")
+    parser.add_argument(
+        '--input', '-i',
+        default="test/town04.mp4",
+        help='Input video file or directory containing videos to process'
+    )
+    
+    parser.add_argument(
+        '--output', '-o',
+        help='Output file or directory. For single file: specify output filename. For directory: specify output directory (default: video/)'
+    )
+    
+    parser.add_argument(
+        '--positive', '-p',
+        default="A video of a wide, multi-lane highway in a mountainous region. The road curves gently to the right, with smooth asphalt and bright white dashed lane markings. A silver car drives slightly ahead in the left lane, with glowing blue tail lights. On the right side, a tall concrete barrier with a blue fence section lines the edge of the highway. Beyond it, a forest of tall evergreen trees rises against the base of mist-covered rocky mountains. Streetlights stand along the road, casting a faint industrial presence, though the ambient light comes mainly from the overcast sky. The air feels hazy, with muted visibility softening the distant trees and hills. The camera moves steadily forward",
+        help='Positive prompt'
+    )
+    
+    parser.add_argument(
+        '--negative', '-n',
+        help='Negative prompt',
+        default="色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，CG, game, cartoon, anime, render, 渲染，游戏，卡通"
+    )
+    
+    parser.add_argument(
+        '--style-prompt', '-s',
+        help='Style positive prompt that will be combined with the main positive prompt',
+        default="Turn it into a photorealistic picture as if it's from a movie. Keep the original lane markers."
+    )
+    
+    parser.add_argument(
+        '--batch',
+        action='store_true',
+        help='Process all videos in the input directory (automatically detected for directories)'
+    )
+    
+    parser.add_argument(
+        '--fps',
+        type=int,
+        default=16,
+        help='Output video FPS (default: 16)'
+    )
+    
+    parser.add_argument(
+        '--frames',
+        type=int,
+        default=81,
+        help='Number of frames to generate (default: 81)'
+    )
+    
+    parser.add_argument(
+        '--seed',
+        type=int,
+        default=-1,
+        help='Random seed for reproducible results (default: -1 for random)'
+    )
+    
+    parser.add_argument(
+        '--preprocess',
+        choices=['Canny', 'Intensity', 'None'],
+        default='Intensity',
+        help='Preprocessing method for control (default: Canny)'
+    )
+    
+    return parser.parse_args()
+
+
+def validate_input_path(input_path: str):
+    """
+    Validate the input path and determine if it's a file or directory.
+    
+    Args:
+        input_path: Path to validate
+        
+    Returns:
+        tuple: (is_file, is_directory, valid_path)
+    """
+    if not os.path.exists(input_path):
+        return False, False, False
+    
+    is_file = os.path.isfile(input_path)
+    is_directory = os.path.isdir(input_path)
+    
+    if is_file:
+        # Check if it's a video file
+        video_extensions = ['.mp4', '.avi', '.mov', '.mkv', '.webm']
+        if not any(input_path.lower().endswith(ext) for ext in video_extensions):
+            print(f"Warning: {input_path} may not be a supported video format")
+    
+    return is_file, is_directory, True
+
+
+def get_output_paths(input_path: str, output_arg: str, is_directory: bool):
+    """
+    Determine output paths based on input and output arguments.
+    
+    Args:
+        input_path: Input file or directory path
+        output_arg: Output argument from command line
+        is_directory: Whether input is a directory
+        
+    Returns:
+        tuple: (output_prefixes, output_dir)
+    """
+    if is_directory:
+        # Processing directory
+        if output_arg:
+            output_dir = output_arg
+        else:
+            output_dir = "video"
+        
+        # Get all video files in directory
+        video_files, _ = load_videos_and_prompts(input_path)
+        output_prefixes = []
+        
+        for video_file in video_files:
+            base_name = os.path.splitext(os.path.basename(video_file))[0]
+            output_prefixes.append(os.path.join(output_dir, f"processed_{base_name}"))
+        
+        return output_prefixes, output_dir
+    
+    else:
+        # Processing single file
+        if output_arg:
+            if os.path.isdir(output_arg):
+                # Output is a directory, create filename
+                base_name = os.path.splitext(os.path.basename(input_path))[0]
+                output_file = os.path.join(output_arg, f"processed_{base_name}.mp4")
+            else:
+                # Output is a specific file
+                output_file = output_arg
+        else:
+            # Default output
+            base_name = os.path.splitext(os.path.basename(input_path))[0]
+            output_file = f"video/processed_{base_name}.mp4"
+        
+        # Create output directory
+        output_dir = os.path.dirname(output_file)
+        os.makedirs(output_dir, exist_ok=True)
+        
+        return [output_file], output_dir
+
+
+if __name__ == "__main__":
+    """
+    Main entry point for command line video processing.
+    """
+    
+    # Parse command line arguments
+    args = parse_arguments()
+    
+    # Validate input path
+    is_file, is_directory, valid_path = validate_input_path(args.input)
+    
+    if not valid_path:
+        print(f"Error: Input path '{args.input}' does not exist.")
+        sys.exit(1)
+    
+    if not is_file and not is_directory:
+        print(f"Error: Input path '{args.input}' is neither a file nor a directory.")
+        sys.exit(1)
+    
+    # Initialize the processor
+    print("Initializing Video Style Shaper...")
+    processor = VideoProcessor()
+    
+    # Determine output paths
+    output_prefixes, output_dir = get_output_paths(args.input, args.output, is_directory)
+    
+    # Create output directory
+    os.makedirs(output_dir, exist_ok=True)
+    args.input = os.path.abspath(args.input)
+    
+    if is_file:
+        # Process single file
+        print(f"Processing single video: {args.input}")
+        print(f"Output will be saved to: {output_prefixes[0]}")
+        
+        # Use custom prompts if provided, otherwise use defaults
+        positive_prompt = args.positive
+        negative_prompt = args.negative
+        style_prompt = args.style_prompt
+        
+        try:
+            result = processor._process_single_video(
+                video_file_path=args.input,
+                output_prefix=output_prefixes[0],
+                positive_prompt=positive_prompt,
+                negative_prompt=negative_prompt,
+                style_prompt=style_prompt,
+                preprocess_option=args.preprocess,
+                num_frames=args.frames,
+                fps=args.fps,
+                seed=args.seed
+            )
+            
+            if result:
+                print(f"Successfully processed video: {result}")
+            else:
+                print("Video processing failed.")
+                sys.exit(1)
+                
+        except Exception as e:
+            print(f"Error processing video: {e}")
+            sys.exit(1)
+    
+    else:
+        # Process directory
+        print(f"Processing directory: {args.input}")
+        print(f"Output directory: {output_dir}")
+        
+        # Load videos and prompts from directory
+        video_files, positive_prompts = load_videos_and_prompts(args.input)
+        
+        if not video_files:
+            print(f"No video files found in directory: {args.input}")
+            sys.exit(1)
+        
+        print(f"Found {len(video_files)} videos to process:")
+        for i, (video, prompt) in enumerate(zip(video_files, positive_prompts)):
+            print(f"  {i+1}. {os.path.basename(video)}")
+            if prompt != "A beautiful video scene":  # Only show custom prompts
+                print(f"     Prompt: {prompt[:100]}...")
+        
+        # Override prompts if custom ones provided
+        if args.positive:
+            positive_prompts = [args.positive] * len(video_files)
+            print(f"Using custom positive prompt: {args.positive}")
+        
+        if args.negative:
+            negative_prompts = [args.negative] * len(video_files)
+            print(f"Using custom negative prompt: {args.negative}")
+        else:
+            negative_prompts = None
+        
+        if args.style_positive:
+            print(f"Using style positive prompt: {args.style_positive}")
+        
+        # Process all videos
+        try:
+            results = processor.process_batch(
+                video_files=video_files,
+                output_prefixes=output_prefixes,
+                positive_prompts=positive_prompts,
+                negative_prompts=negative_prompts,
+                style_positive=args.style_positive,
+                fps=args.fps,
+                num_frames=args.frames,
+                seed=args.seed,
+                preprocess_option=args.preprocess
+            )
+            
+            # Count successful results
+            successful = sum(1 for r in results if r is not None)
+            failed = len(results) - successful
+            
+            print(f"\nBatch processing completed!")
+            print(f"Successfully processed: {successful} videos")
+            if failed > 0:
+                print(f"Failed: {failed} videos")
+            print(f"Output directory: {output_dir}")
+            print("Intermediate results saved to: video/intermediates/")
+            
+        except Exception as e:
+            print(f"Error during batch processing: {e}")
+            sys.exit(1)
