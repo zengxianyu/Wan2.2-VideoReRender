@@ -1,5 +1,14 @@
 # Wan2.2-VideoReRender
 
+stylize or re-render a video. Links to custom nodes, models, and commandline python script
+
+## example
+
+![dog](https://github.com/zengxianyu/zengxianyu/blob/main/dogconcat_gradio_compatible.gif?raw=true)
+![arm](https://github.com/zengxianyu/zengxianyu/blob/main/armconcat_gradio_compatible.gif?raw=true)
+![west](https://github.com/zengxianyu/zengxianyu/blob/main/westconcat_gradio_compatible.gif?raw=true)
+![town4](https://github.com/zengxianyu/zengxianyu/blob/main/town4concat_gradio_compatible.gif?raw=true)
+
 ## ComfyUI
 [Workflow](https://github.com/zengxianyu/Wan2.2-VideoReRender/blob/main/ComfyUI/user/default/workflows/video-style-flux-wan2.2fun.json)
 
@@ -24,10 +33,3 @@
   # Process directory with custom output directory
   python wan22_style.py --input /path/to/videos/ --output /path/to/output/ --batch
 ```
-
-## example
-
-![dog](https://github.com/zengxianyu/zengxianyu/blob/main/dogconcat_gradio_compatible.gif?raw=true)
-![arm](https://github.com/zengxianyu/zengxianyu/blob/main/armconcat_gradio_compatible.gif?raw=true)
-![west](https://github.com/zengxianyu/zengxianyu/blob/main/westconcat_gradio_compatible.gif?raw=true)
-![town4](https://github.com/zengxianyu/zengxianyu/blob/main/town4concat_gradio_compatible.gif?raw=true)
