@@ -22,18 +22,9 @@ Examples:
   python wan22_style.py --input /path/to/videos/ --output /path/to/output/ --batch
 ```
 
-Example results:
+## example
 
-![dog](https://cdn.openart.ai/workflow_thumbnails/AfjGcZUOHfgKmNUiv1RK/gif_Uv2JAkyM_1759047750755_raw.gif)
-
-<video controls>
-  <source src="https://cdn.openart.ai/workflow_thumbnails/AfjGcZUOHfgKmNUiv1RK/video_cXmzdrta_1759039932523_raw.mp4" type="video/mp4">
-</video>
-
-<video controls>
-  <source src="https://cdn.openart.ai/workflow_thumbnails/AfjGcZUOHfgKmNUiv1RK/video_ZnkSJDiZ_1759039932435_raw.mp4" type="video/mp4">
-</video>
-
-<video controls>
-  <source src="https://cdn.openart.ai/workflow_thumbnails/AfjGcZUOHfgKmNUiv1RK/video_3lLDJdP-_1759098438021_raw.mp4" type="video/mp4">
-</video>
+![dog](https://github.com/zengxianyu/zengxianyu/blob/main/dogconcat_gradio_compatible.gif?raw=true)
+![arm](https://github.com/zengxianyu/zengxianyu/blob/main/armconcat_gradio_compatible.gif?raw=true)
+![west](https://github.com/zengxianyu/zengxianyu/blob/main/westconcat_gradio_compatible.gif?raw=true)
+![town4](https://github.com/zengxianyu/zengxianyu/blob/main/town4concat_gradio_compatible.gif?raw=true)
