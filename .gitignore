@@ -1,1 +1,3 @@
 *.pyc
+*.gguf
+*.safetensors

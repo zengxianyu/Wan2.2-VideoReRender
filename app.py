@@ -135,19 +135,19 @@ def process_video_wrapper(structure_video, prompt_video, prompt_negative, struct
 if __name__ == "__main__":
 
     hf_hub_download(repo_id="Comfy-Org/Lumina_Image_2.0_Repackaged", filename="split_files/vae/ae.safetensors",local_dir="temp")
-    os.system("mv temp/ae.safetensors models/vae/ae.safetensors")
+    os.system("mv temp/split_files/vae/ae.safetensors ComfyUI/models/vae/ae.safetensors")
     hf_hub_download(repo_id="Comfy-Org/Wan_2.1_ComfyUI_repackaged", filename="split_files/vae/wan_2.1_vae.safetensors",local_dir="temp")
-    os.system("mv temp/wan_2.1_vae.safetensors models/vae/wan_2.1_vae.safetensors")
+    os.system("mv temp/split_files/vae/wan_2.1_vae.safetensors ComfyUI/models/vae/wan_2.1_vae.safetensors")
     hf_hub_download(repo_id="openai/clip-vit-large-patch14", filename="model.safetensors",local_dir="temp")
-    os.system("mv temp/model.safetensors models/clip/clip-vit-large-patch14.safetensors")
+    os.system("mv temp/model.safetensors ComfyUI/models/clip/clip-vit-large-patch14.safetensors")
     hf_hub_download(repo_id="comfyanonymous/flux_text_encoders", filename="t5xxl_fp8_e4m3fn_scaled.safetensors",local_dir="temp")
-    os.system("mv temp/t5xxl_fp8_e4m3fn_scaled.safetensors models/clip/t5xxl_fp8_e4m3fn_scaled.safetensors")
+    os.system("mv temp/t5xxl_fp8_e4m3fn_scaled.safetensors ComfyUI/models/clip/t5xxl_fp8_e4m3fn_scaled.safetensors")
     hf_hub_download(repo_id="QuantStack/Wan2.2-Fun-A14B-Control-GGUF", filename="HighNoise/Wan2.2-Fun-A14B-Control_HighNoise-Q8_0.gguf",local_dir="temp")
-    os.system("mv temp/Wan2.2-Fun-A14B-Control_HighNoise-Q8_0.gguf models/unet/Wan2.2-Fun-A14B-Control_HighNoise-Q8_0.gguf")
+    os.system("mv temp/HighNoise/Wan2.2-Fun-A14B-Control_HighNoise-Q8_0.gguf ComfyUI/models/unet/Wan2.2-Fun-A14B-Control_HighNoise-Q8_0.gguf")
     hf_hub_download(repo_id="QuantStack/Wan2.2-Fun-A14B-Control-GGUF", filename="LowNoise/Wan2.2-Fun-A14B-Control_LowNoise-Q8_0.gguf",local_dir="temp")
-    os.system("mv temp/Wan2.2-Fun-A14B-Control_LowNoise-Q8_0.gguf models/unet/Wan2.2-Fun-A14B-Control_LowNoise-Q8_0.gguf")
+    os.system("mv temp/LowNoise/Wan2.2-Fun-A14B-Control_LowNoise-Q8_0.gguf ComfyUI/models/unet/Wan2.2-Fun-A14B-Control_LowNoise-Q8_0.gguf")
     hf_hub_download(repo_id="QuantStack/FLUX.1-Kontext-dev-GGUF", filename="flux1-kontext-dev-Q8_0.gguf",local_dir="temp")
-    os.system("mv temp/flux1-kontext-dev-Q8_0.gguf models/unet/flux1-kontext-dev-Q8_0.gguf")
+    os.system("mv temp/flux1-kontext-dev-Q8_0.gguf ComfyUI/models/unet/flux1-kontext-dev-Q8_0.gguf")
     
     # Start your Gradio app
     with gr.Blocks() as app:
