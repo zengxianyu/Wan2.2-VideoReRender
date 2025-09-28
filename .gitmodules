@@ -1,0 +1,6 @@
+[submodule "ComfyUI/custom_nodes/ComfyUI-GGUF"]
+	path = ComfyUI/custom_nodes/ComfyUI-GGUF
+	url = https://github.com/city96/ComfyUI-GGUF
+[submodule "ComfyUI/custom_nodes/cg-image-filter"]
+	path = ComfyUI/custom_nodes/cg-image-filter
+	url = https://github.com/chrisgoringe/cg-image-filter
