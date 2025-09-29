@@ -28,7 +28,7 @@ stylize or re-render a video. Links to custom nodes, models, and commandline pyt
   python wan22_style.py --input video.mp4 --positive "A cinematic scene" --negative "blurry, low quality"
   
   # Process with style prompt
-  python wan22_style.py --input video.mp4 --style-positive "in the style of Van Gogh" --positive "A beautiful landscape"
+  python wan22_style.py --input video.mp4 --style-prompt "in the style of Van Gogh" --positive "A beautiful landscape"
   
   # Process directory with custom output directory
   python wan22_style.py --input /path/to/videos/ --output /path/to/output/ --batch
