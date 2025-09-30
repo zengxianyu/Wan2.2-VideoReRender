@@ -1161,11 +1161,6 @@ if __name__ == "__main__":
             if prompt != "A beautiful video scene":  # Only show custom prompts
                 print(f"     Prompt: {prompt[:100]}...")
         
-        # Override prompts if custom ones provided
-        if args.positive:
-            positive_prompts = [args.positive] * len(video_files)
-            print(f"Using custom positive prompt: {args.positive}")
-        
         if args.negative:
             negative_prompts = [args.negative] * len(video_files)
             print(f"Using custom negative prompt: {args.negative}")
