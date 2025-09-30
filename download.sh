@@ -1,0 +1,10 @@
+huggingface-cli download Comfy-Org/Lumina_Image_2.0_Repackaged split_files/vae/ae.safetensors --local-dir ComfyUI/models/vae &
+huggingface-cli download comfyanonymous/flux_text_encoders t5xxl_fp8_e4m3fn_scaled.safetensors --local-dir ComfyUI/models/clip &
+huggingface-cli download openai/clip-vit-large-patch14 model.safetensors --local-dir ComfyUI/models/clip/clip-vit-large-patch14 &
+huggingface-cli download Comfy-Org/Wan_2.1_ComfyUI_repackaged split_files/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors --local-dir ComfyUI/models/clip &
+huggingface-cli download Comfy-Org/Wan_2.1_ComfyUI_repackaged split_files/vae/wan_2.1_vae.safetensors --local-dir ComfyUI/models/vae &
+huggingface-cli download Comfy-Org/Wan_2.2_ComfyUI_Repackaged split_files/loras/wan2.2_i2v_lightx2v_4steps_lora_v1_high_noise.safetensors --local-dir ComfyUI/models/loras &
+huggingface-cli download Comfy-Org/Wan_2.2_ComfyUI_Repackaged split_files/loras/wan2.2_i2v_lightx2v_4steps_lora_v1_low_noise.safetensors --local-dir ComfyUI/models/loras &
+huggingface-cli download QuantStack/FLUX.1-Kontext-dev-GGUF flux1-kontext-dev-Q8_0.gguf --local-dir ComfyUI/models/unet &
+huggingface-cli download QuantStack/Wan2.2-Fun-A14B-Control-GGUF HighNoise/Wan2.2-Fun-A14B-Control_HighNoise-Q8_0.gguf --local-dir ComfyUI/models/unet &
+huggingface-cli download QuantStack/Wan2.2-Fun-A14B-Control-GGUF LowNoise/Wan2.2-Fun-A14B-Control_LowNoise-Q8_0.gguf --local-dir ComfyUI/models/unet &
