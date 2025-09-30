@@ -336,7 +336,7 @@ class VideoProcessor:
 
     #def process_video(self, video_file_path: str, output_prefix: str = "video", 
     #                 positive_prompt: str = None, negative_prompt: str = None,
-    #                 style_positive: str = None, fps: int = 16, num_frames: int = 81, 
+    #                 style_prompt: str = None, fps: int = 16, num_frames: int = 81, 
     #                 seed: int = -1, preprocess_option: str = "Canny"):
     #    """
     #    Process a single video file using lazy-loaded models.
@@ -346,7 +346,7 @@ class VideoProcessor:
     #        output_prefix: Prefix for the output video file
     #        positive_prompt: Custom positive prompt (uses default if None)
     #        negative_prompt: Custom negative prompt (uses default if None)
-    #        style_positive: Style prompt that will be combined with positive_prompt (optional)
+    #        style_prompt: Style prompt that will be combined with positive_prompt (optional)
     #        fps: Output video FPS (default: 16)
     #        num_frames: Number of frames to generate (default: 81)
     #        seed: Random seed for reproducible results (default: -1 for random)
@@ -369,9 +369,9 @@ class VideoProcessor:
     #                          "The atmosphere feels damp and foggy, with reduced visibility and a muted color palette "
     #                          "dominated by grays and washed-out greens. The camera is fixed at street level, moving forward smoothly")
     #    
-    #    # Combine style_positive with main positive prompt if provided
-    #    if style_positive:
-    #        positive_prompt = f"{positive_prompt}, {style_positive}"
+    #    # Combine style_prompt with main positive prompt if provided
+    #    if style_prompt:
+    #        positive_prompt = f"{positive_prompt}, {style_prompt}"
     #        print(f"Combined prompt: {positive_prompt}")
     #    
     #    if negative_prompt is None:
@@ -828,7 +828,7 @@ class VideoProcessor:
 
     def process_batch(self, video_files: list, output_prefixes: list = None, 
                      positive_prompts: list = None, negative_prompts: list = None,
-                     style_positive: str = None, fps: int = 16, num_frames: int = 81, 
+                     style_prompt: str = None, fps: int = 16, num_frames: int = 81, 
                      seed: int = -1, preprocess_option: str = "Canny"):
         """
         Process multiple video files efficiently using lazy-loaded models.
@@ -838,7 +838,7 @@ class VideoProcessor:
             output_prefixes: List of output prefixes (uses default if None)
             positive_prompts: List of positive prompts (uses default if None)
             negative_prompts: List of negative prompts (uses default if None)
-            style_positive: Style prompt that will be combined with all positive prompts (optional)
+            style_prompt: Style prompt that will be combined with all positive prompts (optional)
             fps: Output video FPS (default: 16)
             num_frames: Number of frames to generate (default: 81)
             seed: Random seed for reproducible results (default: -1 for random)
@@ -857,8 +857,17 @@ class VideoProcessor:
             negative_prompt = negative_prompts[i] if negative_prompts and i < len(negative_prompts) else None
             
             try:
-                result = self.process_video(video_file, output_prefix, positive_prompt, negative_prompt,
-                                           style_positive, fps, num_frames, seed, preprocess_option)
+                result = processor._process_single_video(
+                    video_file_path=video_file,
+                    output_prefix=output_prefix,
+                    positive_prompt=positive_prompt,
+                    negative_prompt=negative_prompt,
+                    style_prompt=style_prompt,
+                    preprocess_option=args.preprocess,
+                    num_frames=args.frames,
+                    fps=args.fps,
+                    seed=args.seed
+                )
                 results.append(result)
             except Exception as e:
                 print(f"Error processing {video_file}: {e}")
@@ -922,7 +931,7 @@ Examples:
   python wan22_style.py --input video.mp4 --positive "A cinematic scene" --negative "blurry, low quality"
   
   # Process with style prompt
-  python wan22_style.py --input video.mp4 --style-positive "in the style of Van Gogh" --positive "A beautiful landscape"
+  python wan22_style.py --input video.mp4 --style-prompt "in the style of Van Gogh" --positive "A beautiful landscape"
   
   # Process directory with custom output directory
   python wan22_style.py --input /path/to/videos/ --output /path/to/output/ --batch
@@ -955,7 +964,7 @@ Examples:
     parser.add_argument(
         '--style-prompt', '-s',
         help='Style positive prompt that will be combined with the main positive prompt',
-        default="Turn it into a photorealistic picture as if it's from a movie. Keep the original lane markers."
+        default="Turn it into a photorealistic picture as if it's from a movie. Keep the original lane markers and number of lanes."
     )
     
     parser.add_argument(
@@ -1163,8 +1172,8 @@ if __name__ == "__main__":
         else:
             negative_prompts = None
         
-        if args.style_positive:
-            print(f"Using style positive prompt: {args.style_positive}")
+        if args.style_prompt:
+            print(f"Using style positive prompt: {args.style_prompt}")
         
         # Process all videos
         try:
@@ -1173,7 +1182,7 @@ if __name__ == "__main__":
                 output_prefixes=output_prefixes,
                 positive_prompts=positive_prompts,
                 negative_prompts=negative_prompts,
-                style_positive=args.style_positive,
+                style_prompt=args.style_prompt,
                 fps=args.fps,
                 num_frames=args.frames,
                 seed=args.seed,
