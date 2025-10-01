@@ -138,90 +138,6 @@ class VideoProcessor:
         self._initialization_lock = False  # Prevent duplicate initialization
         # Don't load models immediately - load them when needed
     
-    #def _load_models(self):
-    #    """Load all required models once and store them for reuse."""
-    #    print("Loading models...")
-    #    
-    #    # Load dual CLIP for Flux model
-    #    dual_clip_loader = NODE_CLASS_MAPPINGS["DualCLIPLoader"]()
-    #    self.models['flux_clip'] = dual_clip_loader.load_clip(
-    #        clip_name1="t5xxl_fp8_e4m3fn_scaled.safetensors", 
-    #        clip_name2="clip-vit-large-patch14.safetensors", 
-    #        type="flux", 
-    #        device="default"
-    #    )
-
-    #    # Load CLIP for WAN model
-    #    clip_loader = NODE_CLASS_MAPPINGS["CLIPLoader"]()
-    #    self.models['wan_clip'] = clip_loader.load_clip(
-    #        clip_name="umt5_xxl_fp8_e4m3fn_scaled.safetensors", 
-    #        type="wan", 
-    #        device="default"
-    #    )
-
-    #    # Load UNet models for different purposes
-    #    unet_loader_gguf = NODE_CLASS_MAPPINGS["UnetLoaderGGUF"]()
-    #    
-    #    # Flux model for initial image generation
-    #    self.models['flux_unet'] = unet_loader_gguf.load_unet(unet_name="flux1-kontext-dev-Q8_0.gguf")
-    #    
-    #    # WAN models for video generation
-    #    #self.models['wan_unet_low_noise'] = unet_loader_gguf.load_unet(unet_name="Wan2.2-Fun-A14B-Control_LowNoise-Q5_K_M.gguf")
-    #    #self.models['wan_unet_high_noise'] = unet_loader_gguf.load_unet(unet_name="Wan2.2-Fun-A14B-Control_HighNoise-Q5_K_M.gguf")
-    #    #self.models['wan_unet_5b'] = unet_loader_gguf.load_unet(unet_name="Wan2.2-Fun-5B-Control-Q8_0.gguf")
-    #    self.models['wan_unet_high_noise'] = unet_loader_gguf.load_unet(unet_name="Wan2.2-Fun-A14B-Control_HighNoise-Q8_0.gguf")
-    #   d
-    # self.models['wan_unet_low_noise'] = unet_loader_gguf.load_unet(unet_name="Wan2.2-Fun-A14B-Control_LowNoise-Q8_0.gguf")
-
-    #    # Load VAE models
-    #    vae_loader = NODE_CLASS_MAPPINGS["VAELoader"]()
-    #    self.models['flux_vae'] = vae_loader.load_vae(vae_name="ae.safetensors")
-    #    self.models['wan_vae'] = vae_loader.load_vae(vae_name="wan_2.1_vae.safetensors")
-    #    #self.models['wan_vae_2_2'] = vae_loader.load_vae(vae_name="wan2.2_vae.safetensors") # for 5B model
-    #    
-    #    # Load LoRA models for WAN
-    #    lora_loader_model_only = NODE_CLASS_MAPPINGS["LoraLoaderModelOnly"]()
-    #    self.models['wan_model_with_low_noise_lora'] = lora_loader_model_only.load_lora_model_only(
-    #        lora_name="wan2.2_i2v_lightx2v_4steps_lora_v1_low_noise.safetensors", 
-    #        strength_model=1, 
-    #        model=get_value_at_index(self.models['wan_unet_low_noise'], 0)
-    #    )
-
-    #    self.models['wan_model_with_high_noise_lora'] = lora_loader_model_only.load_lora_model_only(
-    #        lora_name="wan2.2_i2v_lightx2v_4steps_lora_v1_high_noise.safetensors", 
-    #        strength_model=1, 
-    #        model=get_value_at_index(self.models['wan_unet_high_noise'], 0)
-    #    )
-    #    
-    #    # Load CLIP text encoder (reusable for all processing)
-    #    self.models['clip_text_encode'] = NODE_CLASS_MAPPINGS["CLIPTextEncode"]()
-    #    
-    #    # Load other reusable nodes
-    #    self.models['load_video'] = NODE_CLASS_MAPPINGS["LoadVideo"]()
-    #    self.models['load_video_frame'] = NODE_CLASS_MAPPINGS["LoadVideoFrame"]()
-    #    self.models['flux_kontext_image_scale'] = NODE_CLASS_MAPPINGS["FluxKontextImageScale"]()
-    #    self.models['vae_encode'] = NODE_CLASS_MAPPINGS["VAEEncode"]()
-    #    self.models['get_image_size'] = NODE_CLASS_MAPPINGS["GetImageSize"]()
-    #    self.models['model_sampling_flux'] = NODE_CLASS_MAPPINGS["ModelSamplingFlux"]()
-    #    self.models['flux_guidance'] = NODE_CLASS_MAPPINGS["FluxGuidance"]()
-    #    self.models['reference_latent_node'] = NODE_CLASS_MAPPINGS["ReferenceLatent"]()
-    #    self.models['basic_guider'] = NODE_CLASS_MAPPINGS["BasicGuider"]()
-    #    self.models['basic_scheduler'] = NODE_CLASS_MAPPINGS["BasicScheduler"]()
-    #    self.models['empty_sd3_latent_image'] = NODE_CLASS_MAPPINGS["EmptySD3LatentImage"]()
-    #    self.models['random_noise'] = NODE_CLASS_MAPPINGS["RandomNoise"]()
-    #    self.models['k_sampler_select'] = NODE_CLASS_MAPPINGS["KSamplerSelect"]()
-    #    self.models['sampler_custom_advanced'] = NODE_CLASS_MAPPINGS["SamplerCustomAdvanced"]()
-    #    self.models['vae_decode'] = NODE_CLASS_MAPPINGS["VAEDecode"]()
-    #    self.models['get_video_components'] = NODE_CLASS_MAPPINGS["GetVideoComponents"]()
-    #    self.models['intensity_depth_estimation'] = NODE_CLASS_MAPPINGS["IntensityDepthEstimation"]()
-    #    self.models['canny_opencv'] = NODE_CLASS_MAPPINGS["CannyOpenCV"]()
-    #    self.models['model_sampling_sd3'] = NODE_CLASS_MAPPINGS["ModelSamplingSD3"]()
-    #    self.models['wan_22_fun_control_to_video'] = NODE_CLASS_MAPPINGS["Wan22FunControlToVideo"]()
-    #    self.models['k_sampler_advanced'] = NODE_CLASS_MAPPINGS["KSamplerAdvanced"]()
-    #    self.models['create_video'] = NODE_CLASS_MAPPINGS["CreateVideo"]()
-    #    
-    #    self.models_loaded = True
-    #    print("Models loaded successfully!")
     
     def _load_flux_models(self):
         """Load only Flux models when needed."""
@@ -230,7 +146,7 @@ class VideoProcessor:
             dual_clip_loader = NODE_CLASS_MAPPINGS["DualCLIPLoader"]()
             self.models['flux_clip'] = dual_clip_loader.load_clip(
                 clip_name1="t5xxl_fp8_e4m3fn_scaled.safetensors", 
-                clip_name2="clip-vit-large-patch14.safetensors", 
+                clip_name2="clip-vit-large-patch14/model.safetensors", 
                 type="flux", 
                 device="default"
             )
@@ -245,7 +161,7 @@ class VideoProcessor:
         if 'flux_vae' not in self.loaded_models:
             print("Loading Flux VAE model...")
             vae_loader = NODE_CLASS_MAPPINGS["VAELoader"]()
-            self.models['flux_vae'] = vae_loader.load_vae(vae_name="ae.safetensors")
+            self.models['flux_vae'] = vae_loader.load_vae(vae_name="split_files/vae/ae.safetensors")
             self.loaded_models.add('flux_vae')
         
         # Load utility models needed for Flux processing
@@ -257,7 +173,7 @@ class VideoProcessor:
             print("Loading WAN CLIP model...")
             clip_loader = NODE_CLASS_MAPPINGS["CLIPLoader"]()
             self.models['wan_clip'] = clip_loader.load_clip(
-                clip_name="umt5_xxl_fp8_e4m3fn_scaled.safetensors", 
+                clip_name="split_files/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors", 
                 type="wan", 
                 device="default"
             )
@@ -266,7 +182,7 @@ class VideoProcessor:
         if 'wan_vae' not in self.loaded_models:
             print("Loading WAN VAE model...")
             vae_loader = NODE_CLASS_MAPPINGS["VAELoader"]()
-            self.models['wan_vae'] = vae_loader.load_vae(vae_name="wan_2.1_vae.safetensors")
+            self.models['wan_vae'] = vae_loader.load_vae(vae_name="split_files/vae/wan_2.1_vae.safetensors")
             self.loaded_models.add('wan_vae')
     
     def _load_wan_high_noise_model(self):
@@ -274,14 +190,14 @@ class VideoProcessor:
         if 'wan_unet_high_noise' not in self.loaded_models:
             print("Loading WAN high noise UNet model...")
             unet_loader_gguf = NODE_CLASS_MAPPINGS["UnetLoaderGGUF"]()
-            self.models['wan_unet_high_noise'] = unet_loader_gguf.load_unet(unet_name="Wan2.2-Fun-A14B-Control_HighNoise-Q8_0.gguf")
+            self.models['wan_unet_high_noise'] = unet_loader_gguf.load_unet(unet_name="HighNoise/Wan2.2-Fun-A14B-Control_HighNoise-Q8_0.gguf")
             self.loaded_models.add('wan_unet_high_noise')
         
         if 'wan_model_with_high_noise_lora' not in self.loaded_models:
             print("Loading WAN high noise LoRA...")
             lora_loader_model_only = NODE_CLASS_MAPPINGS["LoraLoaderModelOnly"]()
             self.models['wan_model_with_high_noise_lora'] = lora_loader_model_only.load_lora_model_only(
-                lora_name="wan2.2_i2v_lightx2v_4steps_lora_v1_high_noise.safetensors", 
+                lora_name="split_files/loras/wan2.2_i2v_lightx2v_4steps_lora_v1_high_noise.safetensors", 
                 strength_model=1, 
                 model=get_value_at_index(self.models['wan_unet_high_noise'], 0)
             )
@@ -292,14 +208,14 @@ class VideoProcessor:
         if 'wan_unet_low_noise' not in self.loaded_models:
             print("Loading WAN low noise UNet model...")
             unet_loader_gguf = NODE_CLASS_MAPPINGS["UnetLoaderGGUF"]()
-            self.models['wan_unet_low_noise'] = unet_loader_gguf.load_unet(unet_name="Wan2.2-Fun-A14B-Control_LowNoise-Q8_0.gguf")
+            self.models['wan_unet_low_noise'] = unet_loader_gguf.load_unet(unet_name="LowNoise/Wan2.2-Fun-A14B-Control_LowNoise-Q8_0.gguf")
             self.loaded_models.add('wan_unet_low_noise')
         
         if 'wan_model_with_low_noise_lora' not in self.loaded_models:
             print("Loading WAN low noise LoRA...")
             lora_loader_model_only = NODE_CLASS_MAPPINGS["LoraLoaderModelOnly"]()
             self.models['wan_model_with_low_noise_lora'] = lora_loader_model_only.load_lora_model_only(
-                lora_name="wan2.2_i2v_lightx2v_4steps_lora_v1_low_noise.safetensors", 
+                lora_name="split_files/loras/wan2.2_i2v_lightx2v_4steps_lora_v1_low_noise.safetensors", 
                 strength_model=1, 
                 model=get_value_at_index(self.models['wan_unet_low_noise'], 0)
             )
