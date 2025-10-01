@@ -4,6 +4,7 @@ import pdb
 import sys
 import argparse
 sys.path.insert(0, "ComfyUI")
+from comfy.cli_args import args as comfy_args
 from typing import Sequence, Mapping, Any, Union
 from comfy.model_management import load_models_gpu, free_memory, unload_all_models
 import torch
@@ -447,9 +448,9 @@ class VideoProcessor:
             # =============================================================================
             
             # Force unload ALL models and clear memory
-            unload_all_models()
-            torch.cuda.empty_cache()
-            gc.collect()
+            #unload_all_models()
+            #torch.cuda.empty_cache()
+            #gc.collect()
             print("All models unloaded, memory cleared")
             
             # Wait a moment for memory to be freed
@@ -545,9 +546,9 @@ class VideoProcessor:
             # =============================================================================
             
             # Force unload high noise model and load low noise model
-            unload_all_models()
-            torch.cuda.empty_cache()
-            gc.collect()
+            #unload_all_models()
+            #torch.cuda.empty_cache()
+            #gc.collect()
             print("High noise model unloaded, loading low noise model...")
             
             # Wait for memory to be freed
@@ -607,111 +608,28 @@ class VideoProcessor:
             # Save the video using Python
             video_data = get_value_at_index(final_video, 0)
             print(f"Final video data type: {type(video_data)}")
+
+            # Create output directory
+            output_dir = os.path.dirname(output_prefix)
+            os.makedirs(output_dir, exist_ok=True)
             
-            # Debug breakpoint to inspect video object
+            # Generate output filename
+            output_filename = f"{os.path.basename(output_prefix)}.mp4"
+            output_path = os.path.join(output_dir, output_filename)
+            video_data.save_to(output_path)
             
-            output_path = self._save_video_python(video_data, output_prefix)
-            
-            print(f"Video processing completed for: {video_file_path}")
+            print(f"Video processing completed for: {output_path}")
             
             # =============================================================================
             # STEP 8: Final Cleanup
             # =============================================================================
             
             # Unload all models and cleanup
-            free_memory(0, torch.device("cuda"))
-            torch.cuda.empty_cache()
-            print("All models unloaded and memory cleaned up")
+            #free_memory(0, torch.device("cuda"))
+            #torch.cuda.empty_cache()
+            #print("All models unloaded and memory cleaned up")
             
             return output_path
-
-    def _save_video_python(self, video_data, output_prefix: str, fps: int = 16):
-        """
-        Save video using Python libraries (OpenCV with imageio fallback).
-        
-        Args:
-            video_data: Video data from ComfyUI
-            output_prefix: Output file prefix
-            fps: Frames per second for the output video
-            
-        Returns:
-            str: Path to saved video file, or None if failed
-        """
-        
-        print(f"Video data type: {type(video_data)}")
-        
-        # Create output directory
-        output_dir = os.path.dirname(output_prefix)
-        os.makedirs(output_dir, exist_ok=True)
-        
-        # Generate output filename
-        output_filename = f"{os.path.basename(output_prefix)}.mp4"
-        output_path = os.path.join(output_dir, output_filename)
-        
-        # Handle ComfyUI video objects
-        if hasattr(video_data, 'get_dimensions'):
-            # This is a ComfyUI video object
-            width, height = video_data.get_dimensions()
-            print(f"ComfyUI video dimensions: {width}x{height}")
-            
-            # Try to get video components
-            try:
-                if hasattr(video_data, 'get_components'):
-                    components = video_data.get_components()
-                    print(f"Got components: {type(components)}")
-                    if hasattr(components, 'images'):
-                        video_array = components.images
-                        print(f"Got video components, images shape: {video_array.shape}")
-                        print(f"Images type: {type(video_array)}")
-                    else:
-                        print("Video components don't have images attribute")
-                        print(f"Available attributes: {dir(components)}")
-                        return None
-                else:
-                    print("Video object doesn't have get_components method")
-                    print(f"Available methods: {[m for m in dir(video_data) if not m.startswith('_')]}")
-                    return None
-            except Exception as e:
-                print(f"Error getting video components: {e}")
-                import traceback
-                traceback.print_exc()
-                return None
-        else:
-            # Try to convert to numpy array if needed
-            if hasattr(video_data, 'numpy'):
-                video_array = video_data.numpy()
-            else:
-                video_array = video_data
-        
-        print(f"Video array shape: {video_array.shape}")
-        print(f"Video array dtype: {video_array.dtype}")
-        
-        # Save video using OpenCV
-        try:
-            # Get video dimensions and frame count
-            if video_array.ndim == 4:  # [frames, height, width, channels]
-                frames, height, width, channels = video_array.shape
-            elif video_array.ndim == 5:  # [batch, frames, height, width, channels]
-                batch, frames, height, width, channels = video_array.shape
-                video_array = video_array[0]  # Take first batch
-            else:
-                raise ValueError(f"Unexpected video array shape: {video_array.shape}")
-            
-            # Set up video writer
-            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-            out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
-            
-            # Write frames
-            video_array = video_array.numpy()
-            for frame in video_array:
-                out.write(cv2.cvtColor((frame*255).astype(np.uint8),cv2.COLOR_RGB2BGR))
-            
-            out.release()
-            print(f"Video saved successfully to: {output_path}")
-            return output_path
-            
-        except Exception as e:
-            print(f"Error saving video with OpenCV: {e}")
 
     def _save_intermediate_results(self, output_prefix: str, intermediates: dict):
         """Save intermediate results for debugging and analysis."""
@@ -884,12 +802,6 @@ Examples:
     )
     
     parser.add_argument(
-        '--batch',
-        action='store_true',
-        help='Process all videos in the input directory (automatically detected for directories)'
-    )
-    
-    parser.add_argument(
         '--fps',
         type=int,
         default=16,
@@ -1036,27 +948,22 @@ if __name__ == "__main__":
         negative_prompt = args.negative
         style_prompt = args.style_prompt
         
-        try:
-            result = processor._process_single_video(
-                video_file_path=args.input,
-                output_prefix=output_prefixes[0],
-                positive_prompt=positive_prompt,
-                negative_prompt=negative_prompt,
-                style_prompt=style_prompt,
-                preprocess_option=args.preprocess,
-                num_frames=args.frames,
-                fps=args.fps,
-                seed=args.seed
-            )
+        result = processor._process_single_video(
+            video_file_path=args.input,
+            output_prefix=output_prefixes[0],
+            positive_prompt=positive_prompt,
+            negative_prompt=negative_prompt,
+            style_prompt=style_prompt,
+            preprocess_option=args.preprocess,
+            num_frames=args.frames,
+            fps=args.fps,
+            seed=args.seed
+        )
             
-            if result:
-                print(f"Successfully processed video: {result}")
-            else:
-                print("Video processing failed.")
-                sys.exit(1)
-                
-        except Exception as e:
-            print(f"Error processing video: {e}")
+        if result:
+            print(f"Successfully processed video: {result}")
+        else:
+            print("Video processing failed.")
             sys.exit(1)
     
     else:
@@ -1087,30 +994,25 @@ if __name__ == "__main__":
             print(f"Using style positive prompt: {args.style_prompt}")
         
         # Process all videos
-        try:
-            results = processor.process_batch(
-                video_files=video_files,
-                output_prefixes=output_prefixes,
-                positive_prompts=positive_prompts,
-                negative_prompts=negative_prompts,
-                style_prompt=args.style_prompt,
-                fps=args.fps,
-                num_frames=args.frames,
-                seed=args.seed,
-                preprocess_option=args.preprocess
-            )
-            
-            # Count successful results
-            successful = sum(1 for r in results if r is not None)
-            failed = len(results) - successful
-            
-            print(f"\nBatch processing completed!")
-            print(f"Successfully processed: {successful} videos")
-            if failed > 0:
-                print(f"Failed: {failed} videos")
-            print(f"Output directory: {output_dir}")
-            print("Intermediate results saved to: video/intermediates/")
-            
-        except Exception as e:
-            print(f"Error during batch processing: {e}")
-            sys.exit(1)
+        results = processor.process_batch(
+            video_files=video_files,
+            output_prefixes=output_prefixes,
+            positive_prompts=positive_prompts,
+            negative_prompts=negative_prompts,
+            style_prompt=args.style_prompt,
+            fps=args.fps,
+            num_frames=args.frames,
+            seed=args.seed,
+            preprocess_option=args.preprocess
+        )
+        
+        # Count successful results
+        successful = sum(1 for r in results if r is not None)
+        failed = len(results) - successful
+        
+        print(f"\nBatch processing completed!")
+        print(f"Successfully processed: {successful} videos")
+        if failed > 0:
+            print(f"Failed: {failed} videos")
+        print(f"Output directory: {output_dir}")
+        print("Intermediate results saved to: video/intermediates/")
