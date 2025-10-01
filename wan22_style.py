@@ -14,6 +14,15 @@ from PIL import Image
 import numpy as np
 import glob
 
+def gaussian_blur_on_tensor(tensor: torch.Tensor, kernel_size: int = 25, sigma: float = 3.5) -> torch.Tensor:
+    """
+    Apply Gaussian blur to a tensor.
+    """
+    img = (tensor.cpu().numpy()*255.0).astype(np.uint8)[0]
+    img = cv2.GaussianBlur(img, (kernel_size, kernel_size), sigma)
+    img = img/255.0
+    return torch.from_numpy(img).to(tensor.device).unsqueeze(0)
+
 def get_value_at_index(obj: Union[Sequence, Mapping], index: int) -> Any:
     """Returns the value at the given index of a sequence or mapping.
 
@@ -353,6 +362,7 @@ class VideoProcessor:
                 frame_index=0, 
                 video=get_value_at_index(input_video, 0)
             )
+            reference_frame = (gaussian_blur_on_tensor(reference_frame[0], kernel_size=25, sigma=3.5), )
 
             # Scale the reference frame for Flux model
             scaled_reference = self.models['flux_kontext_image_scale'].scale(
