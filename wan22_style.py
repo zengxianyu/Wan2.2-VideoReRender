@@ -249,7 +249,7 @@ class VideoProcessor:
         if 'wan_unet_high_noise' not in self.loaded_models:
             print("Loading WAN high noise UNet model...")
             unet_loader_gguf = NODE_CLASS_MAPPINGS["UnetLoaderGGUF"]()
-            self.models['wan_unet_high_noise'] = unet_loader_gguf.load_unet(unet_name="HighNoise/Wan2.2-Fun-A14B-Control_HighNoise-Q5_K_S.gguf")
+            self.models['wan_unet_high_noise'] = unet_loader_gguf.load_unet(unet_name="HighNoise/Wan2.2-Fun-A14B-Control_HighNoise-Q8_0.gguf")
             self.loaded_models.add('wan_unet_high_noise')
         
         if 'wan_model_with_high_noise_lora' not in self.loaded_models:
@@ -267,7 +267,7 @@ class VideoProcessor:
         if 'wan_unet_low_noise' not in self.loaded_models:
             print("Loading WAN low noise UNet model...")
             unet_loader_gguf = NODE_CLASS_MAPPINGS["UnetLoaderGGUF"]()
-            self.models['wan_unet_low_noise'] = unet_loader_gguf.load_unet(unet_name="LowNoise/Wan2.2-Fun-A14B-Control_LowNoise-Q5_K_S.gguf")
+            self.models['wan_unet_low_noise'] = unet_loader_gguf.load_unet(unet_name="LowNoise/Wan2.2-Fun-A14B-Control_LowNoise-Q8_0.gguf")
             self.loaded_models.add('wan_unet_low_noise')
         
         if 'wan_model_with_low_noise_lora' not in self.loaded_models:
