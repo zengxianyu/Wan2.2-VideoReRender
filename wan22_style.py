@@ -107,46 +107,95 @@ def add_extra_model_paths() -> None:
 def import_custom_nodes() -> None:
     """Find all custom nodes in the custom_nodes folder and add those node objects to NODE_CLASS_MAPPINGS
 
-    This function sets up a new asyncio event loop, initializes the PromptServer,
-    creates a PromptQueue, and initializes the custom nodes.
+    This function sets up the PromptServer and initializes custom nodes.
+    For API usage, we skip the async initialization to avoid event loop conflicts.
     """
     import asyncio
     import execution
-    from nodes import init_extra_nodes
     sys.path.insert(0, find_path("ComfyUI"))
     import server
 
-    # Creating a new event loop and setting it as the default loop
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
+    # Check if we're already in an event loop (e.g., running in FastAPI)
+    try:
+        # Try to get the running loop
+        loop = asyncio.get_running_loop()
+        
+        # We're in an existing loop (API context), create server instance but skip async init
+        server_instance = server.PromptServer(loop)
+        execution.PromptQueue(server_instance)
+        
+        # For API usage, we'll load nodes synchronously if possible
+        # or skip custom nodes for now
+        print("Running in event loop context - skipping async custom nodes initialization")
+        
+    except RuntimeError:
+        # No event loop is running, create a new one (for CLI usage)
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
 
-    # Creating an instance of PromptServer with the loop
-    server_instance = server.PromptServer(loop)
-    execution.PromptQueue(server_instance)
+        # Creating an instance of PromptServer with the loop
+        server_instance = server.PromptServer(loop)
+        execution.PromptQueue(server_instance)
 
-    # Initializing custom nodes
-    asyncio.run(init_extra_nodes())
+        # Initializing custom nodes in CLI context
+        try:
+            from nodes import init_extra_nodes
+            asyncio.run(init_extra_nodes())
+        except Exception as e:
+            print(f"Warning: Could not initialize custom nodes: {e}")
+            # Continue without custom nodes
 
 
-add_comfyui_directory_to_sys_path()
-add_extra_model_paths()
-import_custom_nodes()
+# ComfyUI initialization will be done when needed
+# add_comfyui_directory_to_sys_path()
+# add_extra_model_paths()
+# import_custom_nodes()
 
+# NODE_CLASS_MAPPINGS will be imported after initialization
+NODE_CLASS_MAPPINGS = None
 
-from nodes import NODE_CLASS_MAPPINGS
+def initialize_comfyui():
+    """Initialize ComfyUI components if not already done."""
+    global NODE_CLASS_MAPPINGS
+    if NODE_CLASS_MAPPINGS is None:
+        add_comfyui_directory_to_sys_path()
+        add_extra_model_paths()
+        import_custom_nodes()
+        from nodes import NODE_CLASS_MAPPINGS as _NODE_CLASS_MAPPINGS
+        NODE_CLASS_MAPPINGS = _NODE_CLASS_MAPPINGS
 
 class VideoProcessor:
     """
     Efficient video processor that loads models once and reuses them for multiple inputs.
     """
     
-    def __init__(self):
+    def __init__(self, lowvram=True):
         """Initialize the processor with lazy loading."""
+        # Initialize ComfyUI components
+        initialize_comfyui()
+        
         self.models_loaded = False
         self.models = {}
         self.loaded_models = set()  # Track which models are currently loaded
         self._initialization_lock = False  # Prevent duplicate initialization
         # Don't load models immediately - load them when needed
+        self.lowvram = lowvram
+        self.progress_callback = None  # Optional callback for progress updates
+    
+    def set_progress_callback(self, callback):
+        """Set a callback function for progress updates during processing."""
+        self.progress_callback = callback
+    
+    def _update_progress(self, progress: float, message: str):
+        """Update progress if callback is set."""
+        if self.progress_callback:
+            self.progress_callback(progress, message)
+    
+    def preload_common_models(self):
+        """Pre-load commonly used models for faster API response times."""
+        print("Pre-loading common models...")
+        self._load_utility_models()
+        print("Common models pre-loaded successfully.")
     
     
     def _load_flux_models(self):
@@ -200,7 +249,7 @@ class VideoProcessor:
         if 'wan_unet_high_noise' not in self.loaded_models:
             print("Loading WAN high noise UNet model...")
             unet_loader_gguf = NODE_CLASS_MAPPINGS["UnetLoaderGGUF"]()
-            self.models['wan_unet_high_noise'] = unet_loader_gguf.load_unet(unet_name="HighNoise/Wan2.2-Fun-A14B-Control_HighNoise-Q8_0.gguf")
+            self.models['wan_unet_high_noise'] = unet_loader_gguf.load_unet(unet_name="HighNoise/Wan2.2-Fun-A14B-Control_HighNoise-Q5_K_S.gguf")
             self.loaded_models.add('wan_unet_high_noise')
         
         if 'wan_model_with_high_noise_lora' not in self.loaded_models:
@@ -218,7 +267,7 @@ class VideoProcessor:
         if 'wan_unet_low_noise' not in self.loaded_models:
             print("Loading WAN low noise UNet model...")
             unet_loader_gguf = NODE_CLASS_MAPPINGS["UnetLoaderGGUF"]()
-            self.models['wan_unet_low_noise'] = unet_loader_gguf.load_unet(unet_name="LowNoise/Wan2.2-Fun-A14B-Control_LowNoise-Q8_0.gguf")
+            self.models['wan_unet_low_noise'] = unet_loader_gguf.load_unet(unet_name="LowNoise/Wan2.2-Fun-A14B-Control_LowNoise-Q5_K_S.gguf")
             self.loaded_models.add('wan_unet_low_noise')
         
         if 'wan_model_with_low_noise_lora' not in self.loaded_models:
@@ -310,13 +359,15 @@ class VideoProcessor:
     
     def _process_single_video(self, video_file_path: str, output_prefix: str, 
                             positive_prompt: str, negative_prompt: str, style_prompt: str, preprocess_option: str = "Intensity",
-							num_frames: int = 81, fps: int = 16, seed: int = -1):
+							num_frames: int = 121, fps: int = 16, seed: int = -1):
         """Internal method to process a single video with ComfyUI-style memory management."""
         with torch.inference_mode():
             
             # =============================================================================
             # STEP 1: Load Flux Models and Encode Text Prompts
             # =============================================================================
+            
+            self._update_progress(10.0, "Loading Flux models...")
             
             # Load only Flux models for this step (lazy loading)
             
@@ -348,14 +399,53 @@ class VideoProcessor:
             )
 
             # =============================================================================
-            # STEP 2: Load Video and Extract Frame
+            # STEP 2: Load Video and Get Total Frame Count
             # =============================================================================
+            
+            self._update_progress(25.0, "Loading and analyzing input video...")
             
             # Load input video
             input_video = self.models['load_video'].EXECUTE_NORMALIZED(file=video_file_path)
+            
+            # Get video components to determine total number of frames
+            video_components = self.models['get_video_components'].EXECUTE_NORMALIZED(
+                video=get_value_at_index(input_video, 0)
+            )
+            
+            # Get total frame count from video components
+            original_total_frames = get_value_at_index(video_components, 0).shape[0]
+            print(f"Original video frames: {original_total_frames}, processing {num_frames} frames per iteration")
+            
+            # Calculate padding needed to make frames divisible by num_frames
+            remainder = original_total_frames % num_frames
+            if remainder != 0:
+                padding_needed = num_frames - remainder
+                print(f"Padding {padding_needed} frames to make total divisible by {num_frames}")
+                
+                # Get the last frame to use for padding
+                video_tensor = get_value_at_index(video_components, 0)
+                last_frame = video_tensor[-1:, :, :, :]  # Keep all dimensions, just get last frame
+                
+                # Create padding by repeating the last frame
+                padding_frames = last_frame.repeat(padding_needed, 1, 1, 1)
+                
+                # Concatenate original video with padding
+                padded_video_tensor = torch.cat([video_tensor, padding_frames], dim=0)
+                video_components = (padded_video_tensor,)
+                
+                total_frames = padded_video_tensor.shape[0]
+                print(f"Video padded to {total_frames} frames")
+            else:
+                total_frames = original_total_frames
+                padding_needed = 0
+                print(f"No padding needed, total frames: {total_frames}")
+            
+            # Calculate number of iterations needed (should be exact division now)
+            num_iterations = total_frames // num_frames
+            print(f"Will process in {num_iterations} iterations")
 
             # =============================================================================
-            # STEP 3: Process Reference Image
+            # STEP 3: Process Reference Image (First Iteration Only)
             # =============================================================================
             
             # Extract first frame as reference
@@ -363,7 +453,7 @@ class VideoProcessor:
                 frame_index=0, 
                 video=get_value_at_index(input_video, 0)
             )
-            reference_frame = (gaussian_blur_on_tensor(reference_frame[0], kernel_size=25, sigma=3.5), )
+            #reference_frame = (gaussian_blur_on_tensor(reference_frame[0], kernel_size=25, sigma=3.5), )
 
             # Scale the reference frame for Flux model
             scaled_reference = self.models['flux_kontext_image_scale'].scale(
@@ -377,8 +467,10 @@ class VideoProcessor:
             )
 
             # =============================================================================
-            # STEP 4: Generate Reference Image with Flux
+            # STEP 4: Generate Reference Image with Flux (First Iteration Only)
             # =============================================================================
+            
+            self._update_progress(40.0, "Generating reference image with Flux...")
             
             # Get image dimensions
             image_dimensions = self.models['get_image_size'].get_size(
@@ -443,170 +535,220 @@ class VideoProcessor:
             )
 
             # Decode to get final reference image
-            reference_image = self.models['vae_decode'].decode(
+            current_reference_image = self.models['vae_decode'].decode(
                 samples=get_value_at_index(sampled_latent, 0), 
                 vae=get_value_at_index(self.models['flux_vae'], 0)
             )
 
             # Save intermediate results
             self._save_intermediate_results(output_prefix, {
-                'reference_image': reference_image,
+                'reference_image': current_reference_image,
             })
-
+            
             # =============================================================================
-            # STEP 5: Switch to WAN Models and Generate Video
+            # ITERATIVE PROCESSING: Steps 5 and 6
             # =============================================================================
             
-            # Force unload ALL models and clear memory
-            #unload_all_models()
-            #torch.cuda.empty_cache()
-            #gc.collect()
-            print("All models unloaded, memory cleared")
+            all_processed_frames = []  # Store all processed video segments
             
-            # Wait a moment for memory to be freed
-            time.sleep(2)
-            
-            # Check memory usage
-            if torch.cuda.is_available():
-                allocated = torch.cuda.memory_allocated() / 1024**3
-                cached = torch.cuda.memory_reserved() / 1024**3
-                print(f"Memory after cleanup - Allocated: {allocated:.2f}GB, Cached: {cached:.2f}GB")
-            
-            # Load only the high noise model first (lazy loading)
-            self._load_wan_models()  # Load WAN CLIP and VAE first
-            self._load_wan_high_noise_model()  # Load high noise model
-            wan_high_noise_model = [get_value_at_index(self.models['wan_model_with_high_noise_lora'], 0)]
-            load_models_gpu(wan_high_noise_model)
-            print("High noise WAN model loaded for first pass")
-            
-            # Get video components and estimate depth
-            video_components = self.models['get_video_components'].EXECUTE_NORMALIZED(
-                video=get_value_at_index(input_video, 0)
-            )
+            for iteration in range(num_iterations):
+                print(f"\n=== Processing iteration {iteration + 1}/{num_iterations} ===")
+                
+                # Calculate frame range for this iteration
+                start_frame = iteration * num_frames
+                end_frame = min(start_frame + num_frames, total_frames)
+                actual_frames = end_frame - start_frame
+                
+                print(f"Processing frames {start_frame} to {end_frame-1} ({actual_frames} frames)")
+                
+                # Create a subset of video frames for this iteration
+                current_video_tensor = get_value_at_index(video_components, 0)[start_frame:end_frame]
+                current_video_components = (current_video_tensor,)
 
-            if preprocess_option == "Intensity":
-                # Estimate depth from video for control
-                depth_map = self.models['intensity_depth_estimation'].estimate_depth(
-                    method="intensity", 
-                    depth_range=1, 
-                    normalize=True, 
-                    blur_radius=1, 
-                    image=get_value_at_index(video_components, 0)
+                # =============================================================================
+                # STEP 5: Switch to WAN Models and Generate Video (Iteration-specific)
+                # =============================================================================
+                
+                if iteration == 0:  # Only do memory cleanup on first iteration
+                    if self.lowvram:
+                        # Force unload ALL models and clear memory
+                        unload_all_models()
+                        torch.cuda.empty_cache()
+                        gc.collect()
+                        print("All models unloaded, memory cleared")
+                    
+                    # Wait a moment for memory to be freed
+                    time.sleep(2)
+                    
+                    # Check memory usage
+                    if torch.cuda.is_available():
+                        allocated = torch.cuda.memory_allocated() / 1024**3
+                        cached = torch.cuda.memory_reserved() / 1024**3
+                        print(f"Memory after cleanup - Allocated: {allocated:.2f}GB, Cached: {cached:.2f}GB")
+                    
+                    # Load only the high noise model first (lazy loading)
+                    self._load_wan_models()  # Load WAN CLIP and VAE first
+                    self._load_wan_high_noise_model()  # Load high noise model
+                    wan_high_noise_model = [get_value_at_index(self.models['wan_model_with_high_noise_lora'], 0)]
+                    load_models_gpu(wan_high_noise_model)
+                    print("High noise WAN model loaded for first pass")
+
+                # Process current video segment for control
+                if preprocess_option == "Intensity":
+                    # Estimate depth from video for control
+                    depth_map = self.models['intensity_depth_estimation'].estimate_depth(
+                        method="intensity", 
+                        depth_range=1, 
+                        normalize=True, 
+                        blur_radius=1, 
+                        image=get_value_at_index(current_video_components, 0)
+                    )
+                elif preprocess_option == "Canny":
+                    depth_map = self.models['canny_opencv'].detect_edges(
+                        image=get_value_at_index(current_video_components, 0),
+                        low_threshold=50,
+                        high_threshold=150,
+                        blur_kernel_size=5,
+                        l2_gradient=False
+                    )
+                else:
+                    depth_map = (get_value_at_index(current_video_components, 0),)
+
+                # Get dimensions for video generation
+                video_dimensions = self.models['get_image_size'].get_size(
+                    image=get_value_at_index(depth_map, 0), 
+                    unique_id=10193800039993504008
                 )
-            elif preprocess_option == "Canny":
-                depth_map = self.models['canny_opencv'].detect_edges(
-                    image=get_value_at_index(video_components, 0),
-                    low_threshold=50,
-                    high_threshold=150,
-                    blur_kernel_size=5,
-                    l2_gradient=False
+
+                # Configure WAN model for video generation (high noise model is already loaded)
+                if iteration == 0:
+                    wan_model_high_noise = self.models['model_sampling_sd3'].patch(
+                        shift=8.000000000000002, 
+                        model=get_value_at_index(self.models['wan_model_with_high_noise_lora'], 0)
+                    )
+
+                # Generate control video using WAN
+                control_video = self.models['wan_22_fun_control_to_video'].EXECUTE_NORMALIZED(
+                    width=get_value_at_index(video_dimensions, 0), 
+                    height=get_value_at_index(video_dimensions, 1), 
+                    length=actual_frames, 
+                    batch_size=1, 
+                    positive=get_value_at_index(wan_positive_conditioning, 0), 
+                    negative=get_value_at_index(wan_negative_conditioning, 0), 
+                    vae=get_value_at_index(self.models['wan_vae'], 0), 
+                    ref_image=get_value_at_index(current_reference_image, 0), 
+                    control_video=get_value_at_index(depth_map, 0)
                 )
+
+                # =============================================================================
+                # STEP 6: First Sampling Pass with High Noise Model (Iteration-specific)
+                # =============================================================================
+                
+                # First sampling pass with high noise model (already loaded)
+                first_pass_result = self.models['k_sampler_advanced'].sample(
+                    add_noise="enable", 
+                    noise_seed=seed if seed != -1 else random.randint(1, 2**64), 
+                    steps=4, 
+                    cfg=1, 
+                    sampler_name="euler", 
+                    scheduler="simple", 
+                    start_at_step=0, 
+                    end_at_step=2, 
+                    return_with_leftover_noise="enable", 
+                    model=get_value_at_index(wan_model_high_noise, 0), 
+                    positive=get_value_at_index(control_video, 0), 
+                    negative=get_value_at_index(control_video, 1), 
+                    latent_image=get_value_at_index(control_video, 2)
+                )
+
+                # =============================================================================
+                # STEP 7: Switch to Low Noise Model for Second Pass (Iteration-specific)
+                # =============================================================================
+                
+                if iteration == 0:  # Only do model loading on first iteration
+                    if self.lowvram:
+                        # Force unload high noise model and load low noise model
+                        unload_all_models()
+                        torch.cuda.empty_cache()
+                        gc.collect()
+                        print("High noise model unloaded, loading low noise model...")
+                    
+                    # Wait for memory to be freed
+                    time.sleep(1)
+                    
+                    # Check memory usage
+                    if torch.cuda.is_available():
+                        allocated = torch.cuda.memory_allocated() / 1024**3
+                        cached = torch.cuda.memory_reserved() / 1024**3
+                        print(f"Memory before loading low noise - Allocated: {allocated:.2f}GB, Cached: {cached:.2f}GB")
+                    
+                    # Load low noise model (lazy loading)
+                    self._load_wan_low_noise_model()
+                    wan_low_noise_model = [get_value_at_index(self.models['wan_model_with_low_noise_lora'], 0)]
+                    load_models_gpu(wan_low_noise_model)
+                    print("Low noise WAN model loaded for second pass")
+                    
+                    # Configure low noise model
+                    wan_model_low_noise = self.models['model_sampling_sd3'].patch(
+                        shift=8.000000000000002, 
+                        model=get_value_at_index(self.models['wan_model_with_low_noise_lora'], 0)
+                    )
+
+                # Second sampling pass with low noise model
+                second_pass_result = self.models['k_sampler_advanced'].sample(
+                    add_noise="disable", 
+                    noise_seed=seed if seed != -1 else random.randint(1, 2**64), 
+                    steps=4, 
+                    cfg=1, 
+                    sampler_name="euler", 
+                    scheduler="simple", 
+                    start_at_step=2, 
+                    end_at_step=4, 
+                    return_with_leftover_noise="disable", 
+                    model=get_value_at_index(wan_model_low_noise, 0), 
+                    positive=get_value_at_index(control_video, 0), 
+                    negative=get_value_at_index(control_video, 1), 
+                    latent_image=get_value_at_index(first_pass_result, 0)
+                )
+
+                # Decode video segment
+                processed_video_segment = self.models['vae_decode'].decode(
+                    samples=get_value_at_index(second_pass_result, 0), 
+                    vae=get_value_at_index(self.models['wan_vae'], 0)
+                )
+                
+                # Store the processed segment
+                all_processed_frames.append(get_value_at_index(processed_video_segment, 0))
+                
+                # Update reference image for next iteration (use last frame of current segment)
+                if iteration < num_iterations - 1:  # Only update if not the last iteration
+                    segment_frames = get_value_at_index(processed_video_segment, 0)
+                    last_frame = segment_frames[-1:, :, :, :]  # Get last frame, keep batch dimension
+                    current_reference_image = (last_frame,)
+                    print(f"Updated reference image with last frame of iteration {iteration + 1}")
+            
+            # =============================================================================
+            # STEP 8: Combine All Processed Segments
+            # =============================================================================
+            
+            # Concatenate all processed frame segments
+            if len(all_processed_frames) > 1:
+                # Concatenate along the frame dimension (typically dimension 0)
+                final_video_frames = torch.cat(all_processed_frames, dim=0)
             else:
-                depth_map = (get_value_at_index(video_components, 0),)
-
-            # Get dimensions for video generation
-            video_dimensions = self.models['get_image_size'].get_size(
-                image=get_value_at_index(depth_map, 0), 
-                unique_id=10193800039993504008
-            )
-
-            # Configure WAN model for video generation (high noise model is already loaded)
-            wan_model_high_noise = self.models['model_sampling_sd3'].patch(
-                shift=8.000000000000002, 
-                model=get_value_at_index(self.models['wan_model_with_high_noise_lora'], 0)
-            )
-
-            # Generate control video using WAN
-            control_video = self.models['wan_22_fun_control_to_video'].EXECUTE_NORMALIZED(
-                width=get_value_at_index(video_dimensions, 0), 
-                height=get_value_at_index(video_dimensions, 1), 
-                length=num_frames, 
-                batch_size=1, 
-                positive=get_value_at_index(wan_positive_conditioning, 0), 
-                negative=get_value_at_index(wan_negative_conditioning, 0), 
-                vae=get_value_at_index(self.models['wan_vae'], 0), 
-                ref_image=get_value_at_index(reference_image, 0), 
-                control_video=get_value_at_index(depth_map, 0)
-            )
-
+                final_video_frames = all_processed_frames[0]
+            
+            # Remove padded frames to restore original video length
+            if padding_needed > 0:
+                print(f"Removing {padding_needed} padded frames from the end")
+                final_video_frames = final_video_frames[:original_total_frames, :, :, :]
+                print(f"Final video restored to original length: {final_video_frames.shape[0]} frames")
+            
+            final_video_latent = (final_video_frames,)
+            print(f"Final video with {final_video_frames.shape[0]} frames ready for output")
 
             # =============================================================================
-            # STEP 6: First Sampling Pass with High Noise Model
-            # =============================================================================
-            
-            # First sampling pass with high noise model (already loaded)
-            first_pass_result = self.models['k_sampler_advanced'].sample(
-                add_noise="enable", 
-                noise_seed=seed if seed != -1 else random.randint(1, 2**64), 
-                steps=4, 
-                cfg=1, 
-                sampler_name="euler", 
-                scheduler="simple", 
-                start_at_step=0, 
-                end_at_step=2, 
-                return_with_leftover_noise="enable", 
-                model=get_value_at_index(wan_model_high_noise, 0), 
-                positive=get_value_at_index(control_video, 0), 
-                negative=get_value_at_index(control_video, 1), 
-                latent_image=get_value_at_index(control_video, 2)
-            )
-
-            # =============================================================================
-            # STEP 7: Switch to Low Noise Model for Second Pass
-            # =============================================================================
-            
-            # Force unload high noise model and load low noise model
-            #unload_all_models()
-            #torch.cuda.empty_cache()
-            #gc.collect()
-            print("High noise model unloaded, loading low noise model...")
-            
-            # Wait for memory to be freed
-            time.sleep(1)
-            
-            # Check memory usage
-            if torch.cuda.is_available():
-                allocated = torch.cuda.memory_allocated() / 1024**3
-                cached = torch.cuda.memory_reserved() / 1024**3
-                print(f"Memory before loading low noise - Allocated: {allocated:.2f}GB, Cached: {cached:.2f}GB")
-            
-            # Load low noise model (lazy loading)
-            self._load_wan_low_noise_model()
-            wan_low_noise_model = [get_value_at_index(self.models['wan_model_with_low_noise_lora'], 0)]
-            load_models_gpu(wan_low_noise_model)
-            print("Low noise WAN model loaded for second pass")
-            
-            # Configure low noise model
-            wan_model_low_noise = self.models['model_sampling_sd3'].patch(
-                shift=8.000000000000002, 
-                model=get_value_at_index(self.models['wan_model_with_low_noise_lora'], 0)
-            )
-
-            # Second sampling pass with low noise model
-            second_pass_result = self.models['k_sampler_advanced'].sample(
-                add_noise="disable", 
-                noise_seed=seed if seed != -1 else random.randint(1, 2**64), 
-                steps=4, 
-                cfg=1, 
-                sampler_name="euler", 
-                scheduler="simple", 
-                start_at_step=2, 
-                end_at_step=4, 
-                return_with_leftover_noise="disable", 
-                model=get_value_at_index(wan_model_low_noise, 0), 
-                positive=get_value_at_index(control_video, 0), 
-                negative=get_value_at_index(control_video, 1), 
-                latent_image=get_value_at_index(first_pass_result, 0)
-            )
-
-            # Decode final video
-            final_video_latent = self.models['vae_decode'].decode(
-                samples=get_value_at_index(second_pass_result, 0), 
-                vae=get_value_at_index(self.models['wan_vae'], 0)
-            )
-
-            # =============================================================================
-            # STEP 7: Create and Save Final Video
+            # STEP 9: Create and Save Final Video
             # =============================================================================
             
             # Create video from frames
@@ -628,16 +770,17 @@ class VideoProcessor:
             output_path = os.path.join(output_dir, output_filename)
             video_data.save_to(output_path)
             
-            print(f"Video processing completed for: {output_path}")
+            print(f"Iterative video processing completed for: {output_path}")
+            print(f"Processed {total_frames} frames in {num_iterations} iterations")
             
             # =============================================================================
-            # STEP 8: Final Cleanup
+            # STEP 10: Final Cleanup
             # =============================================================================
-            
-            # Unload all models and cleanup
-            #free_memory(0, torch.device("cuda"))
-            #torch.cuda.empty_cache()
-            #print("All models unloaded and memory cleaned up")
+            if self.lowvram: 
+                # Unload all models and cleanup
+                free_memory(0, torch.device("cuda"))
+                torch.cuda.empty_cache()
+                print("All models unloaded and memory cleaned up")
             
             return output_path
 
@@ -672,7 +815,7 @@ class VideoProcessor:
 
     def process_batch(self, video_files: list, output_prefixes: list = None, 
                      positive_prompts: list = None, negative_prompts: list = None,
-                     style_prompt: str = None, fps: int = 16, num_frames: int = 81, 
+                     style_prompt: str = None, fps: int = 16, num_frames: int = 121, 
                      seed: int = -1, preprocess_option: str = "Canny"):
         """
         Process multiple video files efficiently using lazy-loaded models.
@@ -718,6 +861,370 @@ class VideoProcessor:
                 results.append(None)
         
         return results
+
+    def process_video_with_reference_image(self, video_file_path: str, reference_image_path: str, 
+                                         output_prefix: str, positive_prompt: str, negative_prompt: str, 
+                                         style_prompt: str = None, preprocess_option: str = "Intensity",
+                                         num_frames: int = 121, fps: int = 16, seed: int = -1):
+        """
+        Process a video using a provided reference image instead of generating one with Flux.
+        
+        Args:
+            video_file_path: Path to the input video file
+            reference_image_path: Path to the reference image file (jpg, png, etc.)
+            output_prefix: Prefix for output files
+            positive_prompt: Positive text prompt for WAN model
+            negative_prompt: Negative text prompt for WAN model
+            style_prompt: Optional style prompt (not used since no Flux generation)
+            preprocess_option: Control preprocessing method
+            num_frames: Number of frames per iteration
+            fps: Output video frame rate
+            seed: Random seed for reproducible results
+            
+        Returns:
+            str: Path to the processed video file
+        """
+        with torch.inference_mode():
+            
+            # =============================================================================
+            # STEP 1: Load WAN Models and Encode Text Prompts (Skip Flux)
+            # =============================================================================
+            
+            self._update_progress(10.0, "Loading WAN models...")
+            
+            # Load utility models first (needed for text encoding)
+            self._load_utility_models()
+            
+            # Load WAN models for text encoding
+            self._load_wan_models()
+            
+            # Encode prompts for WAN model
+            wan_positive_conditioning = self.models['clip_text_encode'].encode(
+                text=positive_prompt, 
+                clip=get_value_at_index(self.models['wan_clip'], 0)
+            )
+            
+            wan_negative_conditioning = self.models['clip_text_encode'].encode(
+                text=negative_prompt, 
+                clip=get_value_at_index(self.models['wan_clip'], 0)
+            )
+
+            # =============================================================================
+            # STEP 2: Load Video and Get Total Frame Count
+            # =============================================================================
+            
+            self._update_progress(25.0, "Loading and analyzing input video...")
+            
+            # Load input video
+            input_video = self.models['load_video'].EXECUTE_NORMALIZED(file=video_file_path)
+            
+            # Get video components to determine total number of frames
+            video_components = self.models['get_video_components'].EXECUTE_NORMALIZED(
+                video=get_value_at_index(input_video, 0)
+            )
+            
+            # Get total frame count from video components
+            original_total_frames = get_value_at_index(video_components, 0).shape[0]
+            print(f"Original video frames: {original_total_frames}, processing {num_frames} frames per iteration")
+            
+            # Calculate padding needed to make frames divisible by num_frames
+            remainder = original_total_frames % num_frames
+            if remainder != 0:
+                padding_needed = num_frames - remainder
+                print(f"Padding {padding_needed} frames to make total divisible by {num_frames}")
+                
+                # Get the last frame to use for padding
+                video_tensor = get_value_at_index(video_components, 0)
+                last_frame = video_tensor[-1:, :, :, :]  # Keep all dimensions, just get last frame
+                
+                # Create padding by repeating the last frame
+                padding_frames = last_frame.repeat(padding_needed, 1, 1, 1)
+                
+                # Concatenate original video with padding
+                padded_video_tensor = torch.cat([video_tensor, padding_frames], dim=0)
+                video_components = (padded_video_tensor,)
+                
+                total_frames = padded_video_tensor.shape[0]
+                print(f"Video padded to {total_frames} frames")
+            else:
+                total_frames = original_total_frames
+                padding_needed = 0
+                print(f"No padding needed, total frames: {total_frames}")
+            
+            # Calculate number of iterations needed (should be exact division now)
+            num_iterations = total_frames // num_frames
+            print(f"Will process in {num_iterations} iterations")
+
+            # =============================================================================
+            # STEP 3: Load Reference Image from File
+            # =============================================================================
+            
+            self._update_progress(40.0, "Loading reference image from file...")
+            
+            # Load reference image from file
+            from PIL import Image
+            import numpy as np
+            
+            try:
+                ref_img = Image.open(reference_image_path).convert('RGB')
+                ref_img_array = np.array(ref_img).astype(np.float32) / 255.0
+                
+                # Convert to tensor format expected by ComfyUI (batch, height, width, channels)
+                if ref_img_array.ndim == 3:
+                    ref_img_array = ref_img_array[np.newaxis, ...]  # Add batch dimension
+                
+                current_reference_image = (torch.from_numpy(ref_img_array),)
+                print(f"Loaded reference image: {reference_image_path}, shape: {current_reference_image[0].shape}")
+                
+            except Exception as e:
+                raise RuntimeError(f"Failed to load reference image {reference_image_path}: {e}")
+
+            # Save intermediate results
+            self._save_intermediate_results(output_prefix, {
+                'reference_image': current_reference_image,
+            })
+            
+            # =============================================================================
+            # ITERATIVE PROCESSING: Steps 4 and 5 (Skip Flux, Use WAN Only)
+            # =============================================================================
+            
+            all_processed_frames = []  # Store all processed video segments
+            
+            for iteration in range(num_iterations):
+                print(f"\n=== Processing iteration {iteration + 1}/{num_iterations} ===")
+                
+                # Calculate frame range for this iteration
+                start_frame = iteration * num_frames
+                end_frame = min(start_frame + num_frames, total_frames)
+                actual_frames = end_frame - start_frame
+                
+                print(f"Processing frames {start_frame} to {end_frame-1} ({actual_frames} frames)")
+                
+                # Create a subset of video frames for this iteration
+                current_video_tensor = get_value_at_index(video_components, 0)[start_frame:end_frame]
+                current_video_components = (current_video_tensor,)
+
+                # =============================================================================
+                # STEP 4: Load WAN Models and Generate Video (Iteration-specific)
+                # =============================================================================
+                
+                if iteration == 0:  # Only do memory cleanup on first iteration
+                    if self.lowvram:
+                        # Force unload ALL models and clear memory
+                        from comfy.model_management import unload_all_models
+                        unload_all_models()
+                        torch.cuda.empty_cache()
+                        gc.collect()
+                        print("All models unloaded, memory cleared")
+                    
+                    # Wait a moment for memory to be freed
+                    time.sleep(2)
+                    
+                    # Check memory usage
+                    if torch.cuda.is_available():
+                        allocated = torch.cuda.memory_allocated() / 1024**3
+                        cached = torch.cuda.memory_reserved() / 1024**3
+                        print(f"Memory after cleanup - Allocated: {allocated:.2f}GB, Cached: {cached:.2f}GB")
+                    
+                    # Load only the high noise model first (lazy loading)
+                    self._load_wan_models()  # Load WAN CLIP and VAE first
+                    self._load_wan_high_noise_model()  # Load high noise model
+                    from comfy.model_management import load_models_gpu
+                    wan_high_noise_model = [get_value_at_index(self.models['wan_model_with_high_noise_lora'], 0)]
+                    load_models_gpu(wan_high_noise_model)
+                    print("High noise WAN model loaded for first pass")
+
+                # Process current video segment for control
+                if preprocess_option == "Intensity":
+                    # Estimate depth from video for control
+                    depth_map = self.models['intensity_depth_estimation'].estimate_depth(
+                        method="intensity", 
+                        depth_range=1, 
+                        normalize=True, 
+                        blur_radius=1, 
+                        image=get_value_at_index(current_video_components, 0)
+                    )
+                elif preprocess_option == "Canny":
+                    depth_map = self.models['canny_opencv'].detect_edges(
+                        image=get_value_at_index(current_video_components, 0),
+                        low_threshold=50,
+                        high_threshold=150,
+                        blur_kernel_size=5,
+                        l2_gradient=False
+                    )
+                else:
+                    depth_map = (get_value_at_index(current_video_components, 0),)
+
+                # Get dimensions for video generation
+                video_dimensions = self.models['get_image_size'].get_size(
+                    image=get_value_at_index(depth_map, 0), 
+                    unique_id=10193800039993504008
+                )
+
+                # Configure WAN model for video generation (high noise model is already loaded)
+                if iteration == 0:
+                    wan_model_high_noise = self.models['model_sampling_sd3'].patch(
+                        shift=8.000000000000002, 
+                        model=get_value_at_index(self.models['wan_model_with_high_noise_lora'], 0)
+                    )
+
+                # Generate control video using WAN
+                control_video = self.models['wan_22_fun_control_to_video'].EXECUTE_NORMALIZED(
+                    width=get_value_at_index(video_dimensions, 0), 
+                    height=get_value_at_index(video_dimensions, 1), 
+                    length=actual_frames, 
+                    batch_size=1, 
+                    positive=get_value_at_index(wan_positive_conditioning, 0), 
+                    negative=get_value_at_index(wan_negative_conditioning, 0), 
+                    vae=get_value_at_index(self.models['wan_vae'], 0), 
+                    ref_image=get_value_at_index(current_reference_image, 0), 
+                    control_video=get_value_at_index(depth_map, 0)
+                )
+
+                # =============================================================================
+                # STEP 5: First Sampling Pass with High Noise Model (Iteration-specific)
+                # =============================================================================
+                
+                # First sampling pass with high noise model (already loaded)
+                first_pass_result = self.models['k_sampler_advanced'].sample(
+                    add_noise="enable", 
+                    noise_seed=seed if seed != -1 else random.randint(1, 2**64), 
+                    steps=4, 
+                    cfg=1, 
+                    sampler_name="euler", 
+                    scheduler="simple", 
+                    start_at_step=0, 
+                    end_at_step=2, 
+                    return_with_leftover_noise="enable", 
+                    model=get_value_at_index(wan_model_high_noise, 0), 
+                    positive=get_value_at_index(control_video, 0), 
+                    negative=get_value_at_index(control_video, 1), 
+                    latent_image=get_value_at_index(control_video, 2)
+                )
+
+                # =============================================================================
+                # STEP 6: Switch to Low Noise Model for Second Pass (Iteration-specific)
+                # =============================================================================
+                
+                if iteration == 0:  # Only do model loading on first iteration
+                    if self.lowvram:
+                        # Force unload high noise model and load low noise model
+                        unload_all_models()
+                        torch.cuda.empty_cache()
+                        gc.collect()
+                        print("High noise model unloaded, loading low noise model...")
+                    
+                    # Wait for memory to be freed
+                    time.sleep(1)
+                    
+                    # Check memory usage
+                    if torch.cuda.is_available():
+                        allocated = torch.cuda.memory_allocated() / 1024**3
+                        cached = torch.cuda.memory_reserved() / 1024**3
+                        print(f"Memory before loading low noise - Allocated: {allocated:.2f}GB, Cached: {cached:.2f}GB")
+                    
+                    # Load low noise model (lazy loading)
+                    self._load_wan_low_noise_model()
+                    wan_low_noise_model = [get_value_at_index(self.models['wan_model_with_low_noise_lora'], 0)]
+                    load_models_gpu(wan_low_noise_model)
+                    print("Low noise WAN model loaded for second pass")
+                    
+                    # Configure low noise model
+                    wan_model_low_noise = self.models['model_sampling_sd3'].patch(
+                        shift=8.000000000000002, 
+                        model=get_value_at_index(self.models['wan_model_with_low_noise_lora'], 0)
+                    )
+
+                # Second sampling pass with low noise model
+                second_pass_result = self.models['k_sampler_advanced'].sample(
+                    add_noise="disable", 
+                    noise_seed=seed if seed != -1 else random.randint(1, 2**64), 
+                    steps=4, 
+                    cfg=1, 
+                    sampler_name="euler", 
+                    scheduler="simple", 
+                    start_at_step=2, 
+                    end_at_step=4, 
+                    return_with_leftover_noise="disable", 
+                    model=get_value_at_index(wan_model_low_noise, 0), 
+                    positive=get_value_at_index(control_video, 0), 
+                    negative=get_value_at_index(control_video, 1), 
+                    latent_image=get_value_at_index(first_pass_result, 0)
+                )
+
+                # Decode video segment
+                processed_video_segment = self.models['vae_decode'].decode(
+                    samples=get_value_at_index(second_pass_result, 0), 
+                    vae=get_value_at_index(self.models['wan_vae'], 0)
+                )
+                
+                # Store the processed segment
+                all_processed_frames.append(get_value_at_index(processed_video_segment, 0))
+                
+                # Update reference image for next iteration (use last frame of current segment)
+                if iteration < num_iterations - 1:  # Only update if not the last iteration
+                    segment_frames = get_value_at_index(processed_video_segment, 0)
+                    last_frame = segment_frames[-1:, :, :, :]  # Get last frame, keep batch dimension
+                    current_reference_image = (last_frame,)
+                    print(f"Updated reference image with last frame of iteration {iteration + 1}")
+            
+            # =============================================================================
+            # STEP 7: Combine All Processed Segments
+            # =============================================================================
+            
+            # Concatenate all processed frame segments
+            if len(all_processed_frames) > 1:
+                # Concatenate along the frame dimension (typically dimension 0)
+                final_video_frames = torch.cat(all_processed_frames, dim=0)
+            else:
+                final_video_frames = all_processed_frames[0]
+            
+            # Remove padded frames to restore original video length
+            if padding_needed > 0:
+                print(f"Removing {padding_needed} padded frames from the end")
+                final_video_frames = final_video_frames[:original_total_frames, :, :, :]
+                print(f"Final video restored to original length: {final_video_frames.shape[0]} frames")
+            
+            final_video_latent = (final_video_frames,)
+            print(f"Final video with {final_video_frames.shape[0]} frames ready for output")
+
+            # =============================================================================
+            # STEP 8: Create and Save Final Video
+            # =============================================================================
+            
+            # Create video from frames
+            final_video = self.models['create_video'].EXECUTE_NORMALIZED(
+                fps=fps, 
+                images=get_value_at_index(final_video_latent, 0)
+            )
+
+            # Save the video using Python
+            video_data = get_value_at_index(final_video, 0)
+            print(f"Final video data type: {type(video_data)}")
+
+            # Create output directory
+            output_dir = os.path.dirname(output_prefix)
+            os.makedirs(output_dir, exist_ok=True)
+            
+            # Generate output filename
+            output_filename = f"{os.path.basename(output_prefix)}.mp4"
+            output_path = os.path.join(output_dir, output_filename)
+            video_data.save_to(output_path)
+            
+            print(f"Video processing with reference image completed: {output_path}")
+            print(f"Processed {total_frames} frames in {num_iterations} iterations")
+            
+            # =============================================================================
+            # STEP 9: Final Cleanup
+            # =============================================================================
+            if self.lowvram: 
+                # Unload all models and cleanup
+                from comfy.model_management import free_memory
+                free_memory(0, torch.device("cuda"))
+                torch.cuda.empty_cache()
+                print("All models unloaded and memory cleaned up")
+            
+            return output_path
 
 
 def load_videos_and_prompts(directory_path: str):
@@ -821,10 +1328,15 @@ Examples:
     parser.add_argument(
         '--frames',
         type=int,
-        default=81,
-        help='Number of frames to generate (default: 81)'
+        default=121,
+        help='Number of frames to generate (default: 121)'
     )
-    
+    parser.add_argument(
+        '--lowvram',
+        action='store_true',
+        help='Enable low VRAM mode'
+    )
+
     parser.add_argument(
         '--seed',
         type=int,
@@ -923,6 +1435,9 @@ if __name__ == "__main__":
     Main entry point for command line video processing.
     """
     
+    # Initialize ComfyUI for command line usage
+    initialize_comfyui()
+    
     # Parse command line arguments
     args = parse_arguments()
     
@@ -939,7 +1454,7 @@ if __name__ == "__main__":
     
     # Initialize the processor
     print("Initializing Video Style Shaper...")
-    processor = VideoProcessor()
+    processor = VideoProcessor(lowvram=args.lowvram)
     
     # Determine output paths
     output_prefixes, output_dir = get_output_paths(args.input, args.output, is_directory)
